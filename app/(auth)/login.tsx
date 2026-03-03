@@ -2,13 +2,13 @@ import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import apiClient from "../../api/apiClient"; // Check this path matches your folder structure!
 
@@ -38,8 +38,11 @@ export default function LoginScreen() {
 
       // 4. Redirect based on role
       // NOTE: We will create these folders in the next step!
+      // 4. Redirect based on role
       if (role === "parent") {
         router.replace("/(parent)/map");
+      } else if (role === "admin") {
+        router.replace("/(admin)/dashboard"); // NEW: Send admins to their special portal
       } else {
         router.replace("/(institution)/dashboard");
       }
