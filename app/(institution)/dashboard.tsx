@@ -1,4 +1,5 @@
 // app/(institution)/dashboard.tsx
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import React, { useState } from "react";
 import {
@@ -76,8 +77,17 @@ export default function InstitutionDashboard() {
     }
 
     try {
+      // 1. Get the REAL logged-in user from the vault
+      const userData = await AsyncStorage.getItem("user");
+      if (!userData) {
+        Alert.alert("Error", "You must be logged in to create an activity.");
+        return;
+      }
+      const user = JSON.parse(userData);
+
+      // 2. Use user.id instead of the hardcoded 2
       await apiClient.post("/activities", {
-        institution_id: 2, // NOTE: Hardcoded to ID 2 for this prototype!
+        institution_id: user.id, // <--- THE FIX!
         title,
         description,
         address,
@@ -93,6 +103,7 @@ export default function InstitutionDashboard() {
       });
 
       Alert.alert("Success!", "Activity added to the map.");
+      // ... rest of your code
 
       // Clear form after saving
       setTitle("");

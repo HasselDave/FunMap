@@ -35,6 +35,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "05122af5-8338-41d2-87f5-e2a9c942028f"
+      }
+    },
+    "owner": "david_sandor18"
   }
 }

@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useState } from "react";
@@ -29,20 +30,30 @@ export default function LoginScreen() {
       // 1. Send credentials to your MySQL Bridge
       const response = await apiClient.post("/auth/login", { email, password });
 
-      // 2. Extract data from response
-      const { token, role } = response.data;
+      // 2. Extract ALL data from response (Added id, userEmail, and username!)
+      // Note: We use "email: userEmail" so it doesn't conflict with your typed email state
+      const { token, role, id, email: userEmail, username } = response.data;
 
       // 3. Save securely on the device
       await SecureStore.setItemAsync("userToken", token);
       await SecureStore.setItemAsync("userRole", role);
 
-      // 4. Redirect based on role
-      // NOTE: We will create these folders in the next step!
+      // 💾 NEW: Save the profile data to the vault for the Profile Drawer!
+      await AsyncStorage.setItem(
+        "user",
+        JSON.stringify({
+          id: id,
+          role: role,
+          email: userEmail,
+          username: username,
+        }),
+      );
+
       // 4. Redirect based on role
       if (role === "parent") {
         router.replace("/(parent)/map");
       } else if (role === "admin") {
-        router.replace("/(admin)/dashboard"); // NEW: Send admins to their special portal
+        router.replace("/(admin)/dashboard");
       } else {
         router.replace("/(institution)/dashboard");
       }
@@ -85,6 +96,16 @@ export default function LoginScreen() {
         ) : (
           <Text style={styles.buttonText}>Log In</Text>
         )}
+      </TouchableOpacity>
+      {/* Add this right below your Login button */}
+      <TouchableOpacity
+        onPress={() => router.replace("/register")}
+        style={{ marginTop: 20 }}
+      >
+        <Text style={{ textAlign: "center", color: "#555", fontSize: 15 }}>
+          Don't have an account?{" "}
+          <Text style={{ fontWeight: "bold", color: "#007AFF" }}>Sign up</Text>
+        </Text>
       </TouchableOpacity>
     </View>
   );

@@ -1,9 +1,17 @@
 // app/(parent)/map.tsx
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import * as Device from "expo-device";
 import * as Location from "expo-location";
-import React, { useEffect, useState } from "react";
+import * as Notifications from "expo-notifications";
+import { useFocusEffect, useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +21,16 @@ import {
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import apiClient from "../../api/apiClient";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true, // <-- NEW: Allow it to drop down from the top
+    shouldShowList: true, // <-- NEW: Allow it to show in the lock screen list
+  }),
+});
 
 // 1. Upgrade the Activity Interface to match the new Database
 interface Activity {
@@ -37,6 +55,7 @@ export default function ParentMapScreen() {
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // UI States
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(
@@ -44,6 +63,113 @@ export default function ParentMapScreen() {
   );
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [childAge, setChildAge] = useState<string>("");
+
+  const router = useRouter();
+
+  // --- DRAWER ANIMATION STATE ---
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // --- USER PROFILE STATE ---
+  const [profile, setProfile] = useState({
+    username: "Loading...",
+    email: "Loading...",
+  });
+
+  // --- PUSH NOTIFICATION SETUP ---
+  useEffect(() => {
+    const registerForPushNotificationsAsync = async () => {
+      if (Device.isDevice) {
+        const { status: existingStatus } =
+          await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+
+        if (existingStatus !== "granted") {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+
+        if (finalStatus !== "granted") {
+          console.log("Failed to get push token for push notification!");
+          return;
+        }
+
+        // Get the token (requires your Expo Project ID if using EAS build, otherwise works locally in Expo Go)
+        const projectId =
+          Constants.expoConfig?.extra?.eas?.projectId ??
+          Constants.easConfig?.projectId;
+        const pushTokenString = (
+          await Notifications.getExpoPushTokenAsync({ projectId })
+        ).data;
+
+        // Grab the user from the vault and send the token to the backend
+        const userData = await AsyncStorage.getItem("user");
+        if (userData) {
+          const user = JSON.parse(userData);
+          await apiClient.post("/users/push-token", {
+            userId: user.id,
+            token: pushTokenString,
+          });
+        }
+      } else {
+        console.log("Must use physical device for Push Notifications");
+      }
+    };
+
+    registerForPushNotificationsAsync();
+  }, []);
+
+  // Load the data from the vault when the map opens
+  // NEW: useFocusEffect runs EVERY time you return to this screen!
+  useFocusEffect(
+    useCallback(() => {
+      const loadProfile = async () => {
+        const userData = await AsyncStorage.getItem("user");
+        if (userData) {
+          setProfile(JSON.parse(userData));
+        }
+      };
+
+      loadProfile();
+    }, []),
+  );
+
+  const handleLogout = async () => {
+    try {
+      // 1. Scrub ALL data from the vaults
+      await AsyncStorage.removeItem("user");
+      await SecureStore.deleteItemAsync("userToken");
+      await SecureStore.deleteItemAsync("userRole");
+
+      // 2. Force the drawer closed instantly (bypassing the animation to avoid glitches)
+      setIsDrawerOpen(false);
+
+      // 3. Route directly back to the login screen
+      router.replace("/login" as any);
+    } catch (error) {
+      console.error("Error during logout:", error);
+      // Failsafe: Try to route them anyway even if deleting storage fails
+      router.replace("/login" as any);
+    }
+  };
+
+  const slideAnim = React.useRef(new Animated.Value(-300)).current; // Drawer starts hidden off-screen
+
+  const openDrawer = () => {
+    setIsDrawerOpen(true);
+    Animated.timing(slideAnim, {
+      toValue: 0, // Slide it to the edge of the screen
+      duration: 300, // 0.3 seconds
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeDrawer = () => {
+    Animated.timing(slideAnim, {
+      toValue: -300, // Slide it back off-screen
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => setIsDrawerOpen(false));
+  };
 
   useEffect(() => {
     (async () => {
@@ -57,30 +183,63 @@ export default function ParentMapScreen() {
     })();
   }, []);
 
-  useEffect(() => {
-    const fetchActivities = async () => {
-      try {
-        const response = await apiClient.get("/activities");
-        setActivities(response.data);
-      } catch (error) {
-        Alert.alert("Error", "Could not load map markers.");
-      }
-    };
-    fetchActivities();
-  }, []);
+  // New way: Only runs when the map actually comes back into view!
+  useFocusEffect(
+    useCallback(() => {
+      const fetchActivities = async () => {
+        try {
+          const response = await apiClient.get("/activities");
 
-  // 2. The Filter Logic
-  const filteredActivities = activities.filter((activity) => {
-    // Check Category
-    if (categoryFilter !== "all" && activity.category !== categoryFilter)
-      return false;
+          setActivities(response.data);
 
-    // Check Age (If the parent typed an age, check if it fits the activity's range)
-    if (childAge !== "") {
-      const ageNum = parseInt(childAge);
-      if (ageNum < activity.min_age || ageNum > activity.max_age) return false;
+          // THE FIX: Use 'prev' to get the absolute newest state, avoiding the memory trap!
+          setSelectedActivity((prev: any) => {
+            if (!prev) return null; // If no card is open, do nothing
+            const updated = response.data.find((a: any) => a.id === prev.id);
+            return updated || prev;
+          });
+        } catch (error) {
+          console.error("Failed to refresh activities:", error);
+        }
+      };
+
+      fetchActivities();
+    }, []), // <--- THE FIX: This array MUST be completely empty!
+  );
+
+  // 2. The Filter Logic (Category + Smart Search Bar)
+  const filteredActivities = activities.filter((activity: any) => {
+    // --- CHECK 1: Category (If you are still using the dropdown) ---
+    if (categoryFilter !== "all" && activity.category !== categoryFilter) {
+      return false; // Wrong category? Hide it!
     }
 
+    // --- CHECK 2: Smart Search Bar (Title OR Age) ---
+    if (searchQuery !== "") {
+      const lowerCaseQuery = searchQuery.toLowerCase();
+
+      // A. Does the text match the Title?
+      const matchesTitle =
+        activity.title && activity.title.toLowerCase().includes(lowerCaseQuery);
+
+      // B. Is the text a number? If so, does it match the Age Range?
+      let matchesAge = false;
+      const searchNumber = parseInt(searchQuery);
+
+      // !isNaN() checks if they successfully typed a real number (like "8" or "12")
+      if (!isNaN(searchNumber)) {
+        // Only true if the typed number is between min_age and max_age
+        matchesAge =
+          searchNumber >= activity.min_age && searchNumber <= activity.max_age;
+      }
+
+      // If it DOESN'T match the title AND it DOESN'T match the age, kick it out!
+      if (!matchesTitle && !matchesAge) {
+        return false;
+      }
+    }
+
+    // If it survived the checks, show it on the map!
     return true;
   });
 
@@ -102,15 +261,23 @@ export default function ParentMapScreen() {
     if (!selectedActivity) return;
 
     try {
-      // For now, we use a dummy parent_id of 1. Later this will come from your secure login!
+      // 1. Get the REAL logged-in user from the vault!
+      const userData = await AsyncStorage.getItem("user");
+      if (!userData) {
+        Alert.alert("Error", "You must be logged in to book an activity.");
+        return;
+      }
+      const user = JSON.parse(userData);
+
+      // 2. Send the real user's ID to the server
       const response = await apiClient.post("/bookings", {
         activity_id: selectedActivity.id,
-        parent_id: 1,
+        parent_id: user.id, // Now uses the real logged-in parent!
       });
 
-      Alert.alert("Success!", response.data.message);
+      Alert.alert("Success! 🎉", response.data.message);
 
-      // Update the local screen so we see the +1 participant immediately without refreshing
+      // Update the local screen so we see the +1 participant immediately
       const updatedActivity = {
         ...selectedActivity,
         current_participants: selectedActivity.current_participants + 1,
@@ -123,13 +290,14 @@ export default function ParentMapScreen() {
         ),
       );
     } catch (error: any) {
-      if (error.response && error.response.status === 400) {
+      // 3. Dynamically read the exact error from our Backend Bouncer
+      if (error.response && error.response.data && error.response.data.error) {
         Alert.alert(
-          "Fully Booked",
-          "Sorry, there are no spots left for this event.",
+          "Booking Failed 🛑",
+          error.response.data.error, // This will show "Limit Reached!" OR "Fully booked!"
         );
       } else {
-        Alert.alert("Error", "Could not complete booking.");
+        Alert.alert("Error", "Could not complete booking. Please try again.");
       }
     }
   };
@@ -141,9 +309,9 @@ export default function ParentMapScreen() {
         <TextInput
           style={styles.ageInput}
           placeholder="Child's Age?"
-          value={childAge}
-          onChangeText={setChildAge}
-          keyboardType="numeric"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          keyboardType="default"
         />
         <ScrollView
           horizontal
@@ -174,6 +342,84 @@ export default function ParentMapScreen() {
           ))}
         </ScrollView>
       </View>
+
+      {/* --- MENU ICON (TOP LEFT) --- */}
+      <TouchableOpacity style={styles.menuIcon} onPress={openDrawer}>
+        <Ionicons name="menu" size={32} color="#333" />
+      </TouchableOpacity>
+
+      {/* --- DARK OVERLAY (Closes drawer when tapped) --- */}
+      {isDrawerOpen && (
+        <TouchableOpacity
+          style={styles.overlay}
+          onPress={closeDrawer}
+          activeOpacity={1}
+        />
+      )}
+
+      {/* --- THE SLIDING DRAWER --- */}
+      <Animated.View
+        style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}
+      >
+        {/* Profile Header */}
+        {/* Profile Header */}
+        <View style={styles.drawerHeader}>
+          <View style={styles.avatarCircle}>
+            {/* Grab the first letter of their username! */}
+            <Text style={styles.avatarText}>
+              {profile.username
+                ? profile.username.charAt(0).toUpperCase()
+                : "P"}
+            </Text>
+          </View>
+          <Text style={styles.drawerUsername}>
+            {profile.username || "Parent User"}
+          </Text>
+          <Text style={styles.drawerEmail}>{profile.email}</Text>
+        </View>
+
+        {/* Menu Items */}
+        <View style={styles.drawerMenu}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              closeDrawer();
+              router.push("/(parent)/current-bookings");
+            }}
+          >
+            <Ionicons name="calendar" size={24} color="#007AFF" />
+            <Text style={styles.menuItemText}>Current Bookings</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              closeDrawer();
+              router.push("/(parent)/previous-bookings");
+            }}
+          >
+            <Ionicons name="time" size={24} color="#007AFF" />
+            <Text style={styles.menuItemText}>Previous Bookings</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              closeDrawer();
+              router.push("/(parent)/change-profile");
+            }}
+          >
+            <Ionicons name="person" size={24} color="#007AFF" />
+            <Text style={styles.menuItemText}>Change Profile</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Log Out Button at the bottom */}
+        <TouchableOpacity style={styles.logoutItem} onPress={handleLogout}>
+          <Ionicons name="log-out" size={24} color="red" />
+          <Text style={styles.logoutText}>Log Out</Text>
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* --- THE MAP --- */}
       <MapView
@@ -373,4 +619,89 @@ const styles = StyleSheet.create({
   },
   bookButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   bookButtonDisabled: { backgroundColor: "#ccc" },
+
+  // --- ADD THESE TO YOUR STYLESHEET ---
+  menuIcon: {
+    position: "absolute",
+    top: 50,
+    left: 15,
+    zIndex: 20,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    padding: 8,
+    borderRadius: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    elevation: 5,
+  },
+  overlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    zIndex: 30,
+  },
+
+  drawer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 300,
+    backgroundColor: "#fff",
+    zIndex: 40,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 15,
+  },
+  drawerHeader: {
+    backgroundColor: "#007AFF",
+    padding: 30,
+    paddingTop: 60,
+    alignItems: "center",
+  },
+  avatarCircle: {
+    width: 70,
+    height: 70,
+    backgroundColor: "#fff",
+    borderRadius: 35,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  avatarText: { fontSize: 30, fontWeight: "bold", color: "#007AFF" },
+  drawerUsername: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  drawerEmail: { fontSize: 14, color: "#e0e0e0", marginTop: 2 },
+
+  drawerMenu: { padding: 20, flex: 1 },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  menuItemText: {
+    fontSize: 16,
+    marginLeft: 15,
+    color: "#333",
+    fontWeight: "500",
+  },
+
+  logoutItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    marginBottom: 50,
+  },
+  logoutText: {
+    fontSize: 16,
+    marginLeft: 15,
+    color: "red",
+    fontWeight: "bold",
+  },
 });
