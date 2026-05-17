@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1018008053350",
+    "project_id": "joymap-a22a5",
+    "storage_bucket": "joymap-a22a5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1018008053350:android:34362f797b93d1f491efa7",
+        "android_client_info": {
+          "package_name": "com.david_sandor18.JoyMap"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBCdMdCz21Peh5RpRX8aE3U0tq--yyBNOs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
