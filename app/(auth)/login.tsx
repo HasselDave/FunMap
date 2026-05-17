@@ -29,10 +29,18 @@ export default function LoginScreen() {
     try {
       // 1. Send credentials to your MySQL Bridge
       const response = await apiClient.post("/auth/login", { email, password });
+      console.log("SERVER RESPONSE:", response.data);
 
       // 2. Extract ALL data from response (Added id, userEmail, and username!)
       // Note: We use "email: userEmail" so it doesn't conflict with your typed email state
-      const { token, role, id, email: userEmail, username } = response.data;
+      const {
+        token,
+        role,
+        id,
+        email: userEmail,
+        username,
+        isVerified,
+      } = response.data;
 
       // 3. Save securely on the device
       await SecureStore.setItemAsync("userToken", token);
@@ -46,6 +54,7 @@ export default function LoginScreen() {
           role: role,
           email: userEmail,
           username: username,
+          isVerified: isVerified,
         }),
       );
 
@@ -55,7 +64,7 @@ export default function LoginScreen() {
       } else if (role === "admin") {
         router.replace("/(admin)/dashboard");
       } else {
-        router.replace("/(institution)/dashboard");
+        router.replace("/(institution)/menu");
       }
     } catch (error) {
       console.error(error);

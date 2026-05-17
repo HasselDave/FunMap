@@ -2,12 +2,12 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import apiClient from "../../api/apiClient"; // Make sure this path is correct based on your folder structure!
 
@@ -23,10 +23,9 @@ export default function RegisterScreen() {
         role,
         email,
         password,
-        username: role === "parent" ? username : null, // Only send username if they are a parent
+        username, // FIX 1: We removed the conditional check so it ALWAYS sends the username!
       });
 
-      // UPDATED LINK: Pointing to /auth/login
       Alert.alert("Success! 🎉", response.data.message, [
         { text: "Go to Login", onPress: () => router.replace("/login") },
       ]);
@@ -75,15 +74,16 @@ export default function RegisterScreen() {
       </View>
 
       <View style={styles.formCard}>
-        {/* CONDITIONAL: Only show Username if they are a parent! */}
-        {role === "parent" && (
-          <TextInput
-            style={styles.input}
-            placeholder="Choose a Username"
-            value={username}
-            onChangeText={setUsername}
-          />
-        )}
+        {/* FIX 2: Removed the {role === "parent"} wrapper so it always shows up. 
+            Also made the placeholder dynamic based on the role! */}
+        <TextInput
+          style={styles.input}
+          placeholder={
+            role === "parent" ? "Choose a Username" : "Institution Name"
+          }
+          value={username}
+          onChangeText={setUsername}
+        />
 
         <TextInput
           style={styles.input}
@@ -109,7 +109,6 @@ export default function RegisterScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* UPDATED LINK: Pointing to /auth/login */}
       <TouchableOpacity
         onPress={() => router.replace("/login")}
         style={{ marginTop: 20 }}

@@ -33,6 +33,7 @@ export default function InstitutionDashboard() {
   const [activityType, setActivityType] = useState("permanent"); // 'permanent' or 'limited'
   const [eventDate, setEventDate] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("");
+  const [maxSpotsPerUser, setMaxSpotsPerUser] = useState("2");
 
   // 📍 1. Handle Tapping on the Map
   const handleMapPress = async (event: any) => {
@@ -100,6 +101,7 @@ export default function InstitutionDashboard() {
         event_date: activityType === "limited" ? eventDate : null,
         max_participants:
           activityType === "limited" ? parseInt(maxParticipants) : null,
+        max_spots_per_user: parseInt(maxSpotsPerUser) || 2,
       });
 
       Alert.alert("Success!", "Activity added to the map.");
@@ -114,6 +116,7 @@ export default function InstitutionDashboard() {
       setMaxAge("");
       setEventDate("");
       setMaxParticipants("");
+      setMaxSpotsPerUser("2");
     } catch (error: any) {
       // 🛡️ Catch the specific 403 Forbidden error from our backend bouncer!
       if (error.response && error.response.status === 403) {
@@ -240,6 +243,14 @@ export default function InstitutionDashboard() {
               placeholder="Max Participants (e.g. 20)"
               value={maxParticipants}
               onChangeText={setMaxParticipants}
+              keyboardType="numeric"
+            />
+            {/* Dynamic Limit Input */}
+            <TextInput
+              style={styles.input}
+              placeholder="Max Spots Per Family (Default: 2)"
+              value={maxSpotsPerUser}
+              onChangeText={setMaxSpotsPerUser}
               keyboardType="numeric"
             />
           </View>

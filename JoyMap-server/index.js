@@ -108,6 +108,7 @@ app.post("/api/auth/login", (req, res) => {
         id: user.id,
         email: user.email,
         username: user.username, // The mobile app needs this for the new drawer!
+        isVerified: Boolean(user.is_verified),
       });
     } else {
       res.status(401).json({ error: "User not found" });
@@ -150,6 +151,7 @@ app.post("/api/activities", (req, res) => {
     address,
     latitude,
     longitude,
+    max_spots_per_user,
   } = req.body;
 
   if (!title || !latitude || !longitude || !institution_id) {
@@ -176,8 +178,8 @@ app.post("/api/activities", (req, res) => {
     // ✅ 2. IF VERIFIED: Save the activity to the database
     const insertQuery = `
       INSERT INTO activities 
-      (institution_id, title, description, category, min_age, max_age, activity_type, event_date, max_participants, address, latitude, longitude) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (institution_id, title, description, category, min_age, max_age, activity_type, event_date, max_participants, address, latitude, longitude,max_spots_per_user) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const values = [
@@ -193,6 +195,7 @@ app.post("/api/activities", (req, res) => {
       address || null,
       latitude,
       longitude,
+      max_spots_per_user,
     ];
 
     db.query(insertQuery, values, (err, result) => {
@@ -216,66 +219,84 @@ app.post("/api/bookings", (req, res) => {
   }
 
   // --- CHECK 1: The Bouncer (Max 2 spots per parent) ---
-  const checkLimitQuery =
-    "SELECT COUNT(*) as bookingCount FROM bookings WHERE parent_id = ? AND activity_id = ?";
+  // 🧠 This query grabs BOTH the limit from the activity, AND the user's current booking count!
+  const checkLimitQuery = `
+    SELECT 
+      (SELECT max_spots_per_user FROM activities WHERE id = ?) as spotLimit,
+      (SELECT COUNT(*) FROM bookings WHERE parent_id = ? AND activity_id = ?) as bookingCount
+  `;
 
-  db.query(checkLimitQuery, [parent_id, activity_id], (err, limitResults) => {
-    if (err)
-      return res.status(500).json({ error: "Database error checking limits." });
-
-    if (limitResults[0].bookingCount >= 2) {
-      return res.status(400).json({
-        error:
-          "Limit Reached! You can only book a maximum of 2 spots per event.",
-      });
-    }
-
-    // --- CHECK 2: The Capacity (Is the event full?) ---
-    const checkCapacityQuery =
-      "SELECT max_participants, current_participants FROM activities WHERE id = ?";
-
-    db.query(checkCapacityQuery, [activity_id], (err, capacityResults) => {
+  // Note the array: [activity_id, parent_id, activity_id] matches the three question marks above
+  db.query(
+    checkLimitQuery,
+    [activity_id, parent_id, activity_id],
+    (err, limitResults) => {
       if (err)
         return res
           .status(500)
-          .json({ error: "Database error checking capacity." });
-      if (capacityResults.length === 0)
-        return res.status(404).json({ error: "Activity not found." });
+          .json({ error: "Database error checking limits." });
 
-      const activity = capacityResults[0];
+      const spotLimit = limitResults[0].spotLimit || 2; // Fallback to 2 just in case
+      const currentBookings = limitResults[0].bookingCount;
 
-      if (
-        activity.max_participants !== null &&
-        activity.current_participants >= activity.max_participants
-      ) {
-        return res
-          .status(400)
-          .json({ error: "Sorry, this event is fully booked!" });
+      // Compare their bookings to the DYNAMIC limit!
+      if (currentBookings >= spotLimit) {
+        return res.status(400).json({
+          error: `Limit Reached! You can only book a maximum of ${spotLimit} spots for this event.`,
+        });
       }
 
-      // --- ACTION 1: Save the Booking ---
-      const bookQuery =
-        "INSERT INTO bookings (activity_id, parent_id) VALUES (?, ?)";
+      // ... continue with your booking insertion logic ...
 
-      db.query(bookQuery, [activity_id, parent_id], (err) => {
-        if (err) return res.status(500).json({ error: "Failed to book." });
+      // --- CHECK 2: The Capacity (Is the event full?) ---
+      const checkCapacityQuery =
+        "SELECT max_participants, current_participants FROM activities WHERE id = ?";
 
-        // --- ACTION 2: Increase the Participant Count ---
-        const updateQuery =
-          "UPDATE activities SET current_participants = current_participants + 1 WHERE id = ?";
+      db.query(checkCapacityQuery, [activity_id], (err, capacityResults) => {
+        if (err)
+          return res
+            .status(500)
+            .json({ error: "Database error checking capacity." });
+        if (capacityResults.length === 0)
+          return res.status(404).json({ error: "Activity not found." });
 
-        db.query(updateQuery, [activity_id], (err) => {
-          if (err)
-            return res
-              .status(500)
-              .json({ error: "Failed to update participant count." });
+        const activity = capacityResults[0];
 
-          console.log(`✅ Parent ${parent_id} booked Activity ${activity_id}`);
-          res.json({ message: "Successfully booked your spot!" });
+        if (
+          activity.max_participants !== null &&
+          activity.current_participants >= activity.max_participants
+        ) {
+          return res
+            .status(400)
+            .json({ error: "Sorry, this event is fully booked!" });
+        }
+
+        // --- ACTION 1: Save the Booking ---
+        const bookQuery =
+          "INSERT INTO bookings (activity_id, parent_id) VALUES (?, ?)";
+
+        db.query(bookQuery, [activity_id, parent_id], (err) => {
+          if (err) return res.status(500).json({ error: "Failed to book." });
+
+          // --- ACTION 2: Increase the Participant Count ---
+          const updateQuery =
+            "UPDATE activities SET current_participants = current_participants + 1 WHERE id = ?";
+
+          db.query(updateQuery, [activity_id], (err) => {
+            if (err)
+              return res
+                .status(500)
+                .json({ error: "Failed to update participant count." });
+
+            console.log(
+              `✅ Parent ${parent_id} booked Activity ${activity_id}`,
+            );
+            res.json({ message: "Successfully booked your spot!" });
+          });
         });
       });
-    });
-  });
+    },
+  );
 });
 
 // 12. Cancel a Booking
@@ -417,6 +438,25 @@ app.get("/api/bookings/previous/:userId", (req, res) => {
         .json({ error: "Failed to fetch previous bookings" });
     }
 
+    res.json(results);
+  });
+});
+
+// 📦 GET ALL ACTIVITIES FOR A SPECIFIC INSTITUTION
+app.get("/api/activities/institution/:id", (req, res) => {
+  const institutionId = req.params.id;
+
+  // Ask the database for this specific institution's activities, newest first
+  const sql =
+    "SELECT * FROM activities WHERE institution_id = ? ORDER BY id DESC";
+
+  db.query(sql, [institutionId], (err, results) => {
+    if (err) {
+      console.error("Database error fetching activities:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+
+    // Send the array of activities back to the mobile app
     res.json(results);
   });
 });
