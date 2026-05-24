@@ -47,11 +47,11 @@ let expo;
 })();
 
 const db = mysql.createConnection({
-  host: "joymap-db-sandor-bdb1.e.aivencloud.com",
-  port: 10564,
-  user: "avnadmin",
-  password: "AVNS_jMxuCRpoLHW3QS1IWEF", // Click the little 'eye' icon in Aiven to reveal and copy your password!
-  database: "joymap_db", // Use defaultdb because that is what Aiven named it!
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
   ssl: {
     rejectUnauthorized: false,
   },
