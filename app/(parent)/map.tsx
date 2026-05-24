@@ -19,7 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import apiClient from "../../api/apiClient";
 
 Notifications.setNotificationHandler({
@@ -423,6 +423,7 @@ export default function ParentMapScreen() {
 
       {/* --- THE MAP --- */}
       <MapView
+        provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={{
           latitude: location.coords.latitude,

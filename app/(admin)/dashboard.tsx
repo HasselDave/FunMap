@@ -1,26 +1,28 @@
-// app/(admin)/dashboard.tsx
 import React, { useEffect, useState } from "react";
 import {
-    Alert,
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import apiClient from "../../api/apiClient";
+
+// 🚨 UPDATE THIS TO YOUR LAPTOP'S WI-FI IP ADDRESS
+const BASE_URL = "http://192.168.1.3:3000";
 
 interface Institution {
   id: number;
   email: string;
-  is_verified: number; // MySQL sends booleans as 1 (true) or 0 (false)
-  document_url: string | null;
+  is_verified: number;
+  verification_document: string | null; // Updated to match your MySQL database
 }
 
 export default function AdminDashboard() {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
 
-  // Fetch all institutions when the screen loads
   useEffect(() => {
     fetchInstitutions();
   }, []);
@@ -35,23 +37,46 @@ export default function AdminDashboard() {
     }
   };
 
-  // The function to verify an institution
   const handleVerify = async (id: number, email: string) => {
     try {
       await apiClient.put(`/admin/verify/${id}`);
       Alert.alert("Success", `${email} has been verified!`);
-      // Refresh the list so the UI updates
-      fetchInstitutions();
+      fetchInstitutions(); // Refresh the list!
     } catch (error) {
       console.error(error);
       Alert.alert("Error", "Could not verify institution.");
     }
   };
 
-  // How each institution card should look
+  const handleReject = async (id: number, email: string) => {
+    Alert.alert(
+      "Reject Institution",
+      `Are you sure you want to reject and delete ${email}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reject",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Call the new backend delete route!
+              await apiClient.delete(`/admin/reject/${id}`);
+              Alert.alert("Rejected", `${email} has been removed.`);
+              fetchInstitutions(); // Refresh the list!
+            } catch (error) {
+              console.error(error);
+              Alert.alert("Error", "Could not reject institution.");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const renderInstitution = ({ item }: { item: Institution }) => (
     <View style={styles.card}>
-      <View style={styles.cardInfo}>
+      {/* --- 1. THE TEXT INFO --- */}
+      <View style={styles.cardHeader}>
         <Text style={styles.emailText}>{item.email}</Text>
         <Text
           style={
@@ -60,18 +85,37 @@ export default function AdminDashboard() {
         >
           Status: {item.is_verified ? "Verified ✅" : "Pending ⏳"}
         </Text>
-        {item.document_url && (
-          <Text style={styles.docText}>📄 Document attached</Text>
-        )}
       </View>
 
-      {!item.is_verified && (
-        <TouchableOpacity
-          style={styles.verifyButton}
-          onPress={() => handleVerify(item.id, item.email)}
-        >
-          <Text style={styles.buttonText}>Approve</Text>
-        </TouchableOpacity>
+      {/* --- 2. THE DOCUMENT VIEWER --- */}
+      {item.verification_document ? (
+        <Image
+          source={{ uri: item.verification_document }}
+          style={styles.documentImage}
+        />
+      ) : (
+        <View style={styles.noDocContainer}>
+          <Text style={styles.noDocText}>No document uploaded yet</Text>
+        </View>
+      )}
+
+      {/* --- 3. THE ACTION BUTTONS --- */}
+      {!item.is_verified && item.verification_document && (
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.approveButton]}
+            onPress={() => handleVerify(item.id, item.email)}
+          >
+            <Text style={styles.buttonText}>Approve</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.rejectButton]}
+            onPress={() => handleReject(item.id, item.email)}
+          >
+            <Text style={styles.buttonText}>Reject</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </View>
   );
@@ -97,50 +141,78 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#F2F2F7",
     paddingTop: 40,
   },
   header: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#333",
+    color: "#1C1C1E",
     textAlign: "center",
   },
   subtitle: {
     fontSize: 16,
-    color: "#666",
+    color: "#8E8E93",
     textAlign: "center",
     marginBottom: 20,
   },
   card: {
     backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    elevation: 2,
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  cardInfo: { flex: 1 },
+  cardHeader: {
+    marginBottom: 15,
+  },
   emailText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "bold",
-    color: "#333",
+    color: "#1C1C1E",
     marginBottom: 4,
   },
-  statusPending: { fontSize: 14, color: "#FFA500", fontWeight: "bold" },
+  statusPending: { fontSize: 14, color: "#FF9500", fontWeight: "bold" },
   statusVerified: { fontSize: 14, color: "#34C759", fontWeight: "bold" },
-  docText: { fontSize: 12, color: "#007AFF", marginTop: 4 },
-  verifyButton: {
-    backgroundColor: "#007AFF",
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 8,
+  documentImage: {
+    width: "100%",
+    height: 250, // Nice and big so you can actually read the document!
+    borderRadius: 12,
+    resizeMode: "cover", // Crops it perfectly to fit the box
+    backgroundColor: "#E5E5EA",
+    marginBottom: 15,
   },
-  buttonText: { color: "#fff", fontWeight: "bold" },
+  noDocContainer: {
+    width: "100%",
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: "#F2F2F7",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  noDocText: { color: "#8E8E93", fontStyle: "italic" },
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12, // Puts space between the buttons
+  },
+  actionButton: {
+    flex: 1, // Makes the buttons equal width
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  approveButton: { backgroundColor: "#34C759" },
+  rejectButton: { backgroundColor: "#FF3B30" },
+  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   emptyText: {
     textAlign: "center",
-    color: "#999",
+    color: "#8E8E93",
     marginTop: 20,
     fontSize: 16,
   },

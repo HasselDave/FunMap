@@ -3,11 +3,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function InstitutionMenu() {
@@ -82,6 +83,43 @@ export default function InstitutionMenu() {
             <Text style={styles.buttonText}>My Activities</Text>
           </View>
           <Ionicons name="chevron-forward" size={24} color="white" />
+        </TouchableOpacity>
+
+        {/* --- DYNAMIC VERIFICATION BUTTON --- */}
+        <TouchableOpacity
+          style={[
+            styles.menuButton,
+            { backgroundColor: isVerified ? "#E5E5EA" : "#FF9500" }, // Gray if verified, Orange if not!
+          ]}
+          onPress={() => {
+            if (isVerified) {
+              Alert.alert(
+                "All Set!",
+                "Your account is already verified and approved.",
+              );
+            } else {
+              router.push("/(institution)/verify");
+            }
+          }}
+        >
+          <View style={styles.buttonContent}>
+            <Ionicons
+              name={isVerified ? "shield-checkmark" : "shield-half-outline"}
+              size={24}
+              color={isVerified ? "#8E8E93" : "white"}
+            />
+            <Text
+              style={[
+                styles.buttonText,
+                { color: isVerified ? "#8E8E93" : "white" },
+              ]}
+            >
+              {isVerified ? "Account Verified" : "Setup Verification"}
+            </Text>
+          </View>
+          {!isVerified && (
+            <Ionicons name="chevron-forward" size={24} color="white" />
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity

@@ -4,6 +4,31 @@ const cors = require("cors");
 require("dotenv").config();
 
 const app = express();
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+// 1. Create an "uploads" folder if it doesn't exist yet
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+
+// 1. Connect to your Cloudinary Vault
+cloudinary.config({
+  cloud_name: "dy5v5pzp7", // <-- Paste your Cloud Name here
+  api_key: "742756914619924", // <-- Paste your API Key here
+  api_secret: "oDO9-LIn0axC06HL8gwVjxUlE9o", // <-- Paste your API Secret here
+});
+
+// 2. Tell Multer to send files straight to the cloud!
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "JoyMap_Documents", // It creates a nice folder in your Cloudinary account
+    allowed_formats: ["jpg", "png", "jpeg"],
+  },
+});
+
+const upload = multer({ storage: storage });
 app.use(cors());
 app.use(express.json());
 
@@ -21,12 +46,15 @@ let expo;
   console.log("📲 Expo Push Notification system securely loaded!");
 })();
 
-// 1. Connect to MySQL
 const db = mysql.createConnection({
-  host: "localhost",
-  user: "root", // your mysql username
-  password: process.env.DB_PASSWORD, // your mysql password
-  database: "joymap_db",
+  host: "joymap-db-sandor-bdb1.e.aivencloud.com",
+  port: 10564,
+  user: "avnadmin",
+  password: "AVNS_jMxuCRpoLHW3QS1IWEF", // Click the little 'eye' icon in Aiven to reveal and copy your password!
+  database: "joymap_db", // Use defaultdb because that is what Aiven named it!
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
 db.connect((err) => {
@@ -342,19 +370,56 @@ app.delete("/api/bookings/:bookingId", (req, res) => {
   });
 });
 
-// 6. Admin: Get all institutions
+// 📥 ADMIN: FETCH ALL INSTITUTIONS
 app.get("/api/admin/institutions", (req, res) => {
-  // We grab all users who are institutions, so the admin can review them
-  const query =
-    "SELECT id, email, is_verified, document_url FROM users WHERE role = 'institution'";
+  // CRUCIAL: Make sure 'verification_document' is in the SELECT list!
+  // (Change 'role = "institution"' if your database uses a different way to identify them)
+  const sql =
+    "SELECT id, email, is_verified, verification_document FROM users WHERE role = 'institution'";
 
-  db.query(query, (err, results) => {
+  db.query(sql, (err, results) => {
     if (err) {
       console.error("Database error fetching institutions:", err);
       return res.status(500).json({ error: "Failed to fetch institutions" });
     }
     res.json(results);
   });
+});
+
+// ❌ ADMIN: REJECT INSTITUTION
+app.delete("/api/admin/reject/:id", (req, res) => {
+  const institutionId = req.params.id;
+
+  // Step 1: Find the document filename before we delete the user
+  db.query(
+    "SELECT verification_document FROM users WHERE id = ?",
+    [institutionId],
+    (err, results) => {
+      if (err) return res.status(500).json({ error: "Database error." });
+
+      const fileName = results[0]?.verification_document;
+
+      // Step 2: Delete the user from the database
+      db.query(
+        "DELETE FROM users WHERE id = ?",
+        [institutionId],
+        (deleteErr) => {
+          if (deleteErr)
+            return res.status(500).json({ error: "Could not delete user." });
+
+          // Step 3: Physically delete the picture from your laptop's folder!
+          if (fileName) {
+            const filePath = path.join(__dirname, "uploads", fileName);
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath); // This is the Node command to trash a file
+            }
+          }
+
+          res.json({ message: "Institution rejected and files cleaned up!" });
+        },
+      );
+    },
+  );
 });
 
 // 7. Admin: Verify an institution
@@ -371,6 +436,34 @@ app.put("/api/admin/verify/:id", (req, res) => {
     res.json({ message: "Institution successfully verified!" });
   });
 });
+
+// 📸 UPLOAD INSTITUTION VERIFICATION DOCUMENT (CLOUDINARY VERSION)
+app.post(
+  "/api/institutions/upload-document",
+  upload.single("document"),
+  (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file received." });
+    }
+
+    const institutionId = req.body.institution_id;
+
+    // Cloudinary automatically gives us the permanent URL in req.file.path!
+    const fileUrl = req.file.path;
+
+    const sql = "UPDATE users SET verification_document = ? WHERE id = ?";
+
+    db.query(sql, [fileUrl, institutionId], (err, result) => {
+      if (err) return res.status(500).json({ error: "Database error." });
+
+      res.json({
+        success: true,
+        message: "Document safely stored in the cloud!",
+        fileUrl: fileUrl,
+      });
+    });
+  },
+);
 
 // 9. Get Current Bookings for a User
 app.get("/api/bookings/current/:userId", (req, res) => {
@@ -475,7 +568,7 @@ app.post("/api/users/push-token", (req, res) => {
 
 // --- THE DAILY REMINDER CRON JOB ---
 // This runs every day at 8:00 AM server time ("0 8 * * *")
-cron.schedule("0 8 * * *", () => {
+cron.schedule("*/1 * * * *", () => {
   console.log("⏰ Running daily booking reminder check...");
 
   // Find all bookings where the event is exactly ONE DAY away, AND the user has a push token

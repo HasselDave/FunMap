@@ -1,0 +1,51 @@
+export default {
+  expo: {
+    name: "JoyMap",
+    slug: "JoyMap",
+    version: "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/images/icon.png",
+    scheme: "joymap",
+    userInterfaceStyle: "automatic",
+    newArchEnabled: true,
+    splash: {
+      image: "./assets/images/splash-icon.png",
+      resizeMode: "contain",
+      backgroundColor: "#ffffff",
+    },
+    ios: {
+      supportsTablet: true,
+    },
+    android: {
+      adaptiveIcon: {
+        foregroundImage: "./assets/images/adaptive-icon.png",
+        backgroundColor: "#ffffff",
+      },
+      edgeToEdgeEnabled: true,
+      predictiveBackGestureEnabled: false,
+      package: "com.david_sandor18.JoyMap",
+      googleServicesFile: "./google-services.json",
+      config: {
+        googleMaps: {
+          apiKey: "process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY",
+        },
+      },
+    },
+    web: {
+      bundler: "metro",
+      output: "static",
+      favicon: "./assets/images/favicon.png",
+    },
+    plugins: ["expo-router", "expo-secure-store"],
+    experiments: {
+      typedRoutes: true,
+    },
+    extra: {
+      router: {},
+      eas: {
+        projectId: "05122af5-8338-41d2-87f5-e2a9c942028f",
+      },
+    },
+    owner: "david_sandor18",
+  },
+};
