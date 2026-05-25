@@ -11,7 +11,7 @@ import {
 import apiClient from "../../api/apiClient";
 
 // 🚨 UPDATE THIS TO YOUR LAPTOP'S WI-FI IP ADDRESS
-const BASE_URL = "http://192.168.1.3:3000";
+const BASE_URL = "https://joymap-api.onrender.com";
 
 interface Institution {
   id: number;

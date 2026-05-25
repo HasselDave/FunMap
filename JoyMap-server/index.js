@@ -554,6 +554,38 @@ app.get("/api/activities/institution/:id", (req, res) => {
   });
 });
 
+// ==========================================
+// STATISTICS ENDPOINT: Average Fill Rate
+// ==========================================
+app.get("/api/statistics/fill-rate/:institution_id", (req, res) => {
+  const institutionId = req.params.institution_id;
+  console.log(`Fetching statistics for institution: ${institutionId}`);
+
+  // SQL Math: (current / max) * 100, rounded to 1 decimal place.
+  // We only check activities for this specific institution, and ensure max > 0 to prevent crashes.
+  const query = `
+    SELECT 
+      category, 
+      min_age, 
+      max_age, 
+      ROUND(AVG((current_participants / max_participants) * 100), 1) AS average_fill_rate,
+      SUM(current_participants) AS total_booked_kids,
+      SUM(max_participants) AS total_capacity
+    FROM activities 
+    WHERE institution_id = ? AND max_participants > 0
+    GROUP BY category, min_age, max_age
+    ORDER BY average_fill_rate DESC
+  `;
+
+  db.query(query, [institutionId], (err, results) => {
+    if (err) {
+      console.error("Database error fetching statistics:", err);
+      return res.status(500).json({ error: "Failed to fetch statistics" });
+    }
+    res.json(results);
+  });
+});
+
 // 13. Save Push Token
 app.post("/api/users/push-token", (req, res) => {
   const { userId, token } = req.body;
