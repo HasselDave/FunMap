@@ -180,6 +180,8 @@ app.post("/api/activities", (req, res) => {
     latitude,
     longitude,
     max_spots_per_user,
+    contact_phone, // 👈 NEW
+    contact_email, // 👈 NEW
   } = req.body;
 
   if (!title || !latitude || !longitude || !institution_id) {
@@ -192,7 +194,6 @@ app.post("/api/activities", (req, res) => {
   db.query(checkQuery, [institution_id], (err, results) => {
     if (err) return res.status(500).json({ error: "Database error" });
 
-    // If user doesn't exist OR is_verified is 0 (false)
     if (results.length === 0 || results[0].is_verified === 0) {
       console.log(
         `❌ Blocked unverified institution ${institution_id} from posting.`,
@@ -203,11 +204,11 @@ app.post("/api/activities", (req, res) => {
       });
     }
 
-    // ✅ 2. IF VERIFIED: Save the activity to the database
+    // ✅ 2. IF VERIFIED: Save the activity to the database (UPDATED QUERY)
     const insertQuery = `
       INSERT INTO activities 
-      (institution_id, title, description, category, min_age, max_age, activity_type, event_date, max_participants, address, latitude, longitude,max_spots_per_user) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (institution_id, title, description, category, min_age, max_age, activity_type, event_date, max_participants, address, latitude, longitude, max_spots_per_user, contact_phone, contact_email) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const values = [
@@ -223,14 +224,16 @@ app.post("/api/activities", (req, res) => {
       address || null,
       latitude,
       longitude,
-      max_spots_per_user,
+      max_spots_per_user || 1,
+      contact_phone || null, // 👈 NEW
+      contact_email || null, // 👈 NEW
     ];
 
     db.query(insertQuery, values, (err, result) => {
       if (err)
         return res.status(500).json({ error: "Failed to save activity" });
 
-      console.log("✅ Securely saved new activity!");
+      console.log("✅ Securely saved new activity with contact info!");
       res.json({
         message: "Activity created successfully",
         id: result.insertId,
