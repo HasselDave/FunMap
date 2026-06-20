@@ -241,6 +241,72 @@ app.post("/api/activities", (req, res) => {
     });
   });
 });
+
+// 5. UPDATE an Activity (Edit)
+app.put("/api/activities/:id", (req, res) => {
+  const { id } = req.params;
+  const {
+    title,
+    description,
+    category,
+    min_age,
+    max_age,
+    activity_type,
+    event_date,
+    max_participants,
+    address,
+    latitude,
+    longitude,
+    max_spots_per_user,
+    contact_phone,
+    contact_email,
+  } = req.body;
+
+  const updateQuery = `
+    UPDATE activities 
+    SET title=?, description=?, category=?, min_age=?, max_age=?, activity_type=?, 
+        event_date=?, max_participants=?, address=?, latitude=?, longitude=?, 
+        max_spots_per_user=?, contact_phone=?, contact_email=?
+    WHERE id=?
+  `;
+
+  const values = [
+    title,
+    description,
+    category,
+    min_age,
+    max_age,
+    activity_type,
+    event_date || null,
+    max_participants || null,
+    address,
+    latitude,
+    longitude,
+    max_spots_per_user,
+    contact_phone || null,
+    contact_email || null,
+    id,
+  ];
+
+  db.query(updateQuery, values, (err, result) => {
+    if (err)
+      return res.status(500).json({ error: "Failed to update activity" });
+    res.json({ message: "Activity updated successfully" });
+  });
+});
+
+// 6. DELETE an Activity
+app.delete("/api/activities/:id", (req, res) => {
+  const { id } = req.params;
+  const deleteQuery = "DELETE FROM activities WHERE id = ?";
+
+  db.query(deleteQuery, [id], (err, result) => {
+    if (err)
+      return res.status(500).json({ error: "Failed to delete activity" });
+    res.json({ message: "Activity deleted successfully" });
+  });
+});
+
 // 5. Book an Activity Route (WITH 2-SPOT LIMIT & CAPACITY CHECK)
 app.post("/api/bookings", (req, res) => {
   const { activity_id, parent_id } = req.body;
