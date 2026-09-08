@@ -4,6 +4,8 @@
 
 JoyMap is a cross-platform mobile application designed to connect parents with providers of extracurricular activities for children. It addresses the difficulty parents face in quickly discovering suitable local activities, while providing institutions with a dedicated channel for market exposure and visibility. The primary objective is to simplify the booking process and create a safe environment with a strict validation system for institutions.
 
+A project presentation with pictures is added to the repo ("JoyMap.ppt").
+
 ## Tech Stack & Architecture
 
 The project utilizes a client-server architecture, completely separating the visual interface from the data processing logic.
